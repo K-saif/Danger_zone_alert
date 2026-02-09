@@ -4,7 +4,7 @@ Central configuration for the danger zone alert system.
 """
 
 # Video configuration
-VIDEO_PATH = "/home/medprime/Music/Danger_zone_alert/data/0_te21_cropped.mp4"
+VIDEO_PATH = "./Danger_zone_alert/data/0_te21_cropped.mp4"
 OUTPUT_PATH = None  # Set to a path to save output video, None to skip
 
 # YOLO configuration

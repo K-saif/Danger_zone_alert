@@ -96,8 +96,8 @@ def main():
                 verbose=False
             )
             
-            # Visualize detections
-            annotated_frame = results[0].plot()
+            # Use original frame instead of YOLO plot (zone_alert_manager will draw all annotations with speed/distance)
+            annotated_frame = frame.copy()
             
             # Apply quadrilateral mask
             annotated_frame = tracker.apply_quadrilateral_mask(

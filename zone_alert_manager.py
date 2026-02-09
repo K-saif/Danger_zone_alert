@@ -6,6 +6,78 @@ Manages detection, alerting, and tracking of persons in danger zones.
 import cv2
 import time
 from datetime import datetime
+from collections import defaultdict
+
+# ================================
+# Speed Tracking Configuration
+# ================================
+FPS = 30  # Frame per second of video
+FRAME_SKIP = 5  # Frames to skip between speed calculations
+
+# Calibration constants for distance estimation
+# These are based on height of person and pixel height at reference distance
+REAL_HEIGHT = 1.76  # Average human height in meters
+PIXEL_HEIGHT_REF = 384  # Pixel height of person near camera
+K = REAL_HEIGHT * PIXEL_HEIGHT_REF  # Calibration constant
+
+
+# ================================
+# Speed Tracking Functions
+# ================================
+def estimate_distance_from_bbox(bbox):
+    """
+    Estimate distance from camera based on bounding box height.
+    
+    Args:
+        bbox: Bounding box as (x1, y1, x2, y2)
+    
+    Returns:
+        float: Estimated distance in meters, or None if invalid
+    """
+    x1, y1, x2, y2 = bbox
+    pixel_height = y2 - y1
+    if pixel_height <= 0:
+        return None
+    return K / pixel_height  # meters
+
+
+def estimate_speed(track_id, frame_idx, distance, track_history):
+    """
+    Estimate speed of person based on distance history.
+    
+    Args:
+        track_id: Unique tracking ID
+        frame_idx: Current frame index
+        distance: Current distance in meters
+        track_history: Dictionary of track_id -> [(frame_idx, distance)]
+    
+    Returns:
+        float: Estimated speed in m/s, or None if insufficient data
+    """
+    history = track_history[track_id]
+    history.append((frame_idx, distance))
+    
+    # Keep last N frames
+    WINDOW = 8
+    if len(history) > WINDOW:
+        history.pop(0)
+    
+    if len(history) < 2:
+        return None
+    
+    speeds = []
+    for i in range(1, len(history)):
+        f0, d0 = history[i - 1]
+        f1, d1 = history[i]
+        
+        dt = (f1 - f0) / FPS
+        if dt > 0:
+            speeds.append((d1 - d0) / dt)
+    
+    if not speeds:
+        return None
+    
+    return sum(speeds) / len(speeds)
 
 
 class PersonInZone:
@@ -24,6 +96,12 @@ class PersonInZone:
         self.exit_time = None
         self.duration = 0
         self.alert_shown = False
+        
+        # Speed tracking fields
+        self.last_speed = None  # Last calculated speed in m/s
+        self.last_distance = None  # Last estimated distance in meters
+        self.total_distance = 0  # Total distance traveled while in zone (meters)
+        self.prev_distance = None  # Previous distance measurement for accumulation
     
     def get_duration(self, current_time=None):
         """
@@ -79,6 +157,10 @@ class ZoneAlertManager:
         self.persons_in_zone = {}  # {track_id: PersonInZone}
         self.alert_history = []  # List of all zone violation records
         self.current_in_zone = {}  # {track_id: True/False}
+        
+        # Speed tracking
+        self.track_history = defaultdict(list)  # {track_id: [(frame_idx, distance)]}
+        self.frame_idx = 0  # Current frame index
     
     def update(self, detection_results, frame):
         """
@@ -107,8 +189,29 @@ class ZoneAlertManager:
                 if track_id is not None:
                     detected_ids.add(track_id)
                 
-                # Check if in zone
+                # Check if in zone first
                 is_in_zone = self.tracker.is_bbox_in_zone(bbox)
+                
+                # Estimate distance ONLY if in zone
+                distance = None
+                if is_in_zone:
+                    distance = estimate_distance_from_bbox(bbox)
+                
+                # Draw bounding box and labels
+                x1, y1, x2, y2 = map(int, bbox)
+                
+                if is_in_zone:
+                    # Red box for persons in zone
+                    box_color = (0, 0, 255)
+                else:
+                    # Green box for persons outside zone
+                    box_color = (0, 255, 0)
+                
+                # Draw bounding box
+                cv2.rectangle(annotated_frame, (x1, y1), (x2, y2), box_color, 2)
+                
+                # Prepare label
+                label_parts = [f"ID {track_id}"] if track_id is not None else []
                 
                 if is_in_zone:
                     # Draw the bottom center point in red
@@ -129,6 +232,30 @@ class ZoneAlertManager:
                             })
                         
                         self.current_in_zone[track_id] = True
+                        
+                        # Calculate distance and speed for persons in zone
+                        if distance is not None:
+                            person = self.persons_in_zone[track_id]
+                            person.last_distance = distance
+                            
+                            # Accumulate total distance traveled in zone
+                            if person.prev_distance is not None:
+                                distance_delta = abs(person.prev_distance - distance)
+                                person.total_distance += distance_delta
+                            
+                            person.prev_distance = distance
+                            
+                            if self.frame_idx % FRAME_SKIP == 0:
+                                speed = estimate_speed(track_id, self.frame_idx, distance, self.track_history)
+                                if speed is not None:
+                                    person.last_speed = speed
+                            
+                            # Add distance to label
+                            label_parts.append(f"{distance:.2f}m")
+                            
+                            # Add speed to label if available
+                            if person.last_speed is not None:
+                                label_parts.append(f"{abs(person.last_speed):.2f}m/s")
                 
                 else:
                     # Draw the bottom center point in green
@@ -138,6 +265,20 @@ class ZoneAlertManager:
                     
                     if track_id is not None:
                         self.current_in_zone[track_id] = False
+                
+                # Draw label
+                label = " | ".join(label_parts)
+                text_size = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.6, 2)[0]
+                cv2.rectangle(annotated_frame, (x1, y1 - 25), (x1 + text_size[0] + 5, y1), box_color, -1)
+                cv2.putText(
+                    annotated_frame,
+                    label,
+                    (x1 + 2, y1 - 8),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    0.6,
+                    (0, 255, 255),
+                    2
+                )
         
         # Check for persons who left the zone
         for track_id in list(self.persons_in_zone.keys()):
@@ -154,7 +295,8 @@ class ZoneAlertManager:
                     'track_id': track_id,
                     'timestamp': current_time,
                     'duration': duration,
-                    'message': f"⚠ Person (ID: {track_id}) left danger zone (Duration: {duration:.2f}s)"
+                    'distance': person.total_distance,
+                    'message': f"⚠ Person (ID: {track_id}) left danger zone (Duration: {duration:.2f}s, Distance: {person.total_distance:.2f}m)"
                 })
                 
                 # Add to history
@@ -164,13 +306,19 @@ class ZoneAlertManager:
                     'exit_time': person.exit_time,
                     'duration': duration,
                     'entry_datetime': datetime.fromtimestamp(person.entry_time),
-                    'exit_datetime': datetime.fromtimestamp(person.exit_time)
+                    'exit_datetime': datetime.fromtimestamp(person.exit_time),
+                    'max_speed': person.last_speed,
+                    'last_distance': person.last_distance,
+                    'total_distance': person.total_distance
                 })
         
         # Draw alert text if anyone is in zone
         persons_in_zone_count = sum(1 for v in self.current_in_zone.values() if v)
         if persons_in_zone_count > 0:
             annotated_frame = self._draw_alert_text(annotated_frame, persons_in_zone_count)
+        
+        # Increment frame counter
+        self.frame_idx += 1
         
         return annotated_frame, alerts_triggered
     
@@ -258,10 +406,12 @@ class ZoneAlertManager:
                     'exit_time': person.exit_time,
                     'duration': duration,
                     'entry_datetime': datetime.fromtimestamp(person.entry_time),
-                    'exit_datetime': datetime.fromtimestamp(person.exit_time)
+                    'exit_datetime': datetime.fromtimestamp(person.exit_time),
+                    'max_speed': person.last_speed,
+                    'total_distance': person.total_distance
                 })
                 
-                print(f"[{datetime.fromtimestamp(current_time).strftime('%H:%M:%S')}] ⚠ Person (ID: {track_id}) still in danger zone (Duration: {duration:.2f}s) - Video ended")
+                print(f"[{datetime.fromtimestamp(current_time).strftime('%H:%M:%S')}] ⚠ Person (ID: {track_id}) still in danger zone (Duration: {duration:.2f}s, Distance: {person.total_distance:.2f}m) - Video ended")
     
     def print_statistics(self):
         """Print detailed violation information to console"""
@@ -280,6 +430,8 @@ class ZoneAlertManager:
             entry_dt = violation['entry_datetime']
             exit_dt = violation['exit_datetime']
             duration = violation['duration']
+            max_speed = violation.get('max_speed', None)
+            total_distance = violation.get('total_distance', 0)
             
             # Format with full timestamp including microseconds for precision
             entry_time_str = entry_dt.strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]  # milliseconds
@@ -287,10 +439,15 @@ class ZoneAlertManager:
             
             print(f"\nViolation #{i}")
             print("-" * 80)
-            print(f"Person ID: {violation['track_id']}")
-            print(f"Entry Time:    {entry_time_str}")
-            print(f"Exit Time:     {exit_time_str}")
-            print(f"Duration:      {duration:.2f} seconds ({int(duration)} sec {int((duration % 1) * 1000)} ms)")
+            print(f"Person ID:         {violation['track_id']}")
+            print(f"Entry Time:        {entry_time_str}")
+            print(f"Exit Time:         {exit_time_str}")
+            print(f"Duration:          {duration:.2f} seconds ({int(duration)} sec {int((duration % 1) * 1000)} ms)")
+            print(f"Distance Traveled: {total_distance:.2f} meters")
+            
+            # Print speed information if available
+            if max_speed is not None:
+                print(f"Max Speed:         {abs(max_speed):.2f} m/s ({abs(max_speed) * 3.6:.2f} km/h)")
         
         print("\n" + "=" * 80)
         print(f"Total Violations: {len(self.alert_history)}")
@@ -301,3 +458,5 @@ class ZoneAlertManager:
         self.persons_in_zone = {}
         self.current_in_zone = {}
         self.alert_history = []
+        self.track_history = defaultdict(list)
+        self.frame_idx = 0
