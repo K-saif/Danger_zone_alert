@@ -1,12 +1,12 @@
 # Danger Zone Alert System
 
-A real-time computer vision solution for detecting and tracking persons entering designated danger zones in video feeds. Combines YOLOv8 person detection with spatial tracking and camera-perspective speed/distance estimation to provide real-time alerts and detailed analytics.
+A real-time computer vision solution for detecting and tracking persons entering designated danger zones in video feeds. Combines YOLO11 person detection with spatial tracking and camera-perspective speed/distance estimation to provide real-time alerts and detailed analytics.
 
 **Key Question Answered:** *"Who entered the restricted zone, for how long, how far did they move, and at what speed?"*
 
 ## Features
 
-✅ **Real-time Person Detection & Tracking** - YOLOv8-based detection with persistent ID tracking across frames  
+✅ **Real-time Person Detection & Tracking** - YOLO11-based detection with persistent ID tracking across frames  
 ✅ **Interactive Danger Zone Definition** - User-drawn quadrilateral polygons for custom restricted area boundaries  
 ✅ **Camera-Centric Distance Estimation** - Estimates distance from camera using bounding box perspective scaling (meters)  
 ✅ **Speed Estimation** - Tracks motion velocity with sliding window smoothing (m/s and km/h)  
@@ -249,44 +249,6 @@ Total Violations: 1
 - `Distance Traveled` - Total distance moved while in zone
 - `Max Speed` - Highest speed detected during zone occupancy
 
-## Module Documentation
-
-### `zone_alert_manager.py`
-Core logic: detection, tracking, speed/distance calculation, and alert management.
-
-**Key Classes:**
-- `PersonInZone` - Per-person violation record tracking entry time, exit time, duration, speed, and distance
-- `ZoneAlertManager` - Manages all detection, spatial analysis, and alert generation
-
-**Key Methods:**
-- `update(detection_results, frame)` - Process frame detections and return annotated frame
-- `finalize_zone_exits()` - Mark remaining persons as exited at video end
-- `print_statistics()` - Display comprehensive violation report
-- `log_alert(alert)` - Print alert to console with timestamp
-
-**Speed/Distance Functions:**
-- `estimate_distance_from_bbox(bbox)` - Calculate distance using perspective scaling
-- `estimate_speed(track_id, frame_idx, distance, track_history)` - Calculate speed from distance history
-
-### `quadrilateral_tracker.py`
-Handles interactive zone polygon drawing and spatial zone checking.
-
-**Key Methods:**
-- `get_first_frame()` - Extract first video frame
-- `draw_quadrilateral()` - Interactive 4-point polygon drawing
-- `is_bbox_in_zone(bbox)` - Check if bounding box center is in zone (point-in-polygon test)
-- `apply_quadrilateral_mask(image, alpha)` - Draw zone visualization on frame
-
-### `utils.py`
-Helper utilities for logging and video processing.
-
-**Key Classes:**
-- `VideoWriter` - Write processed video to file with codec handling
-- `Logger` - Unified logging system with timestamps
-
-### `config.py`
-Central configuration for all system parameters (paths, YOLO settings, colors, calibration).
-
 ## Keyboard Controls
 
 | Key | Action |
@@ -327,60 +289,6 @@ Central configuration for all system parameters (paths, YOLO settings, colors, c
 - **Single Camera** - No multi-view triangulation for improved accuracy
 - **Motion Blur** - Fast motion may cause detection misses or bbox jitter
 
----
-
-## Troubleshooting
-
-### YOLO Model Download
-If model fails to download:
-```bash
-python -c "from ultralytics import YOLO; YOLO('yolo11n.pt')"
-```
-
-### Video Not Found
-- Verify `VIDEO_PATH` in `config.py` is correct
-- Use absolute file paths
-- Ensure video format is OpenCV-compatible (MP4, AVI, MOV, etc.)
-
-### No Detections
-- Lower `YOLO_CONFIDENCE` in `config.py`
-- Ensure video resolution is adequate
-- Check lighting conditions in video
-
-### Distance/Speed Seem Wrong
-- Verify calibration via calibration procedure above
-- Check that `FPS` matches actual video frame rate
-- Ensure persons are upright (not tilted/lying down)
-
-### Performance Issues
-- Use lighter YOLO models (yolo11n is nano; fast but less accurate)
-- Reduce video resolution
-- Set `OUTPUT_PATH = None` to skip video writing
-- Increase `FRAME_SKIP` for lower-end hardware
-
----
-
-## Performance Metrics
-
-**Tested Configuration:**
-- Video Resolution: 910×1080
-- Video FPS: 24.14
-- YOLO Model: yolo11n (nano, lightweight)
-- Processing Speed: Real-time on modern CPUs
-
-**Hardware Requirements:**
-
-| Scenario | GPU | CPU |
-|----------|-----|-----|
-| **Real-time (30 FPS)** | RTX 3060+ | Not feasible |
-| **Near-real-time (10 FPS)** | GTX 1070+ | Intel i7+ |
-| **Offline analysis** | Any | i5 or higher |
-
-**Optimization Tips:**
-1. Use `yolo11n.pt` (nano) for speed; switch to `yolo11s.pt` (small) if accuracy critical
-2. Reduce input resolution if 4K
-3. Increase `FRAME_SKIP` for slower hardware
-4. Use GPU for production deployments
 
 ---
 
@@ -396,23 +304,3 @@ python -c "from ultralytics import YOLO; YOLO('yolo11n.pt')"
 - [ ] Temporal smoothing (Kalman filter)
 - [ ] Crowd density estimation
 - [ ] Cloud integration for remote monitoring
-
----
-
-## License
-
-This project is provided as-is for safety and monitoring purposes.
-
-## Support
-
-For issues or questions:
-1. Check configuration in `config.py`
-2. Verify all dependencies are installed (`pip list`)
-3. Review calibration procedure for distance/speed accuracy
-4. Ensure video file is readable by OpenCV
-
----
-
-**Version:** 2.0  
-**Last Updated:** February 9, 2026  
-**Status:** Production Ready
