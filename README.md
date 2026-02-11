@@ -1,4 +1,4 @@
-# Danger Zone Alert System
+# ZoneGuard
 
 A real-time computer vision solution for detecting and tracking persons entering designated danger zones in video feeds. Combines YOLO11 person detection with spatial tracking and camera-perspective speed/distance estimation to provide real-time alerts and detailed analytics.
 
