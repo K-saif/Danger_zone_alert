@@ -29,7 +29,6 @@ Danger_zone_alert/
 ├── utils.py                     # Logging, video writer, utilities
 ├── data/                        # Video files
 │   └── 0_te21_cropped.mp4
-├── output/                      # Generated output videos
 └── README.md
 ```
 
