@@ -256,7 +256,6 @@ Total Violations: 1
 | Right-Click | Remove last point (during drawing) |
 | SPACE | Confirm quadrilateral (after 4 points added) |
 | ESC | Cancel quadrilateral drawing |
-| Q | Stop video processing |
 
 ## Assumptions & Limitations
 
